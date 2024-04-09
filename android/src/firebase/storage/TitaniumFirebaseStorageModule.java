@@ -7,8 +7,11 @@
  */
 package firebase.storage;
 
+import android.net.Uri;
+
 import androidx.annotation.NonNull;
 
+import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
@@ -36,58 +39,57 @@ public class TitaniumFirebaseStorageModule extends KrollModule {
     private static final String LCAT = "TitaniumFirebaseStorageModule";
     private static final boolean DBG = TiConfig.LOGD;
     FirebaseStorage storage;
-	KrollFunction callback;
+    KrollFunction callback;
+
     public TitaniumFirebaseStorageModule() {
         super();
-        storage = FirebaseStorage.getInstance();
     }
 
     @Kroll.onAppCreate
     public static void onAppCreate(TiApplication app) {
-        Log.d(LCAT, "inside onAppCreate");
-        // put module init code that needs to run when the application is created
     }
 
     // Methods
     @Kroll.method
+    public void create() {
+        storage = FirebaseStorage.getInstance();
+    }
+
+    @Kroll.method
     public void upload(KrollDict options) {
-		callback = (KrollFunction) options.get("callback");
-		TiBlob blob = TiConvert.toBlob(options.get("data"));
+        callback = (KrollFunction) options.get("callback");
+        TiBlob blob = TiConvert.toBlob(options.get("data"));
 
-		InputStream stream = blob.getInputStream();
-		StorageReference storageRef = storage.getReference();
-		StorageReference mountainsRef = storageRef.child(blob.getFile().getName());
+        InputStream stream = blob.getInputStream();
+        StorageReference storageRef = storage.getReference();
+        StorageReference fileRef = storageRef.child(blob.getFile().getName());
 
-		Task uploadTask = mountainsRef.putStream(stream);
-		uploadTask.addOnFailureListener(new OnFailureListener() {
-			@Override
-			public void onFailure(@NonNull Exception exception) {
-				Log.e(LCAT, "Error uploading file: " + exception.getMessage());
-			}
-		}).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
-			@Override
-			public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-				if (callback != null) {
-                    KrollDict event = new KrollDict();
-                    event.put("downloadURL", taskSnapshot.getUploadSessionUri());
-                    callback.callAsync(krollObject, event);
+        Task uploadTask = fileRef.putStream(stream);
+        uploadTask.addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception exception) {
+                Log.e(LCAT, "Error uploading file: " + exception.getMessage());
+                KrollDict event = new KrollDict();
+                event.put("success", false);
+                callback.callAsync(krollObject, event);
+            }
+        }).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            @Override
+            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                if (callback != null) {
+
+                    fileRef.getDownloadUrl().addOnCompleteListener(new OnCompleteListener<Uri>() {
+                        @Override
+                        public void onComplete(@NonNull Task<Uri> task) {
+                            String downloadURL = task.getResult().toString();
+                            KrollDict event = new KrollDict();
+                            event.put("success", true);
+                            event.put("downloadURL", downloadURL);
+                            callback.callAsync(krollObject, event);
+                        }
+                    });
                 }
-			}
-		});
+            }
+        });
     }
-
-    // Properties
-    @Kroll.getProperty
-    public String getExampleProp() {
-        Log.d(LCAT, "get example property");
-        return "hello world";
-    }
-
-
-    @Kroll.setProperty
-    public void setExampleProp(String value) {
-        Log.d(LCAT, "set example property: " + value);
-    }
-
 }
-
